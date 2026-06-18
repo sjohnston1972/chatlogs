@@ -1,7 +1,15 @@
 import type { Breakdown, DailyPoint, HeatCell } from "../types";
 
-/** Tiny inline sparkline for site tiles (last N days of activity). */
-export function Sparkline({ data, height = 32 }: { data: number[]; height?: number }) {
+/** Tiny inline sparkline for site tiles; `color` warms with recent activity. */
+export function Sparkline({
+  data,
+  height = 32,
+  color,
+}: {
+  data: number[];
+  height?: number;
+  color?: string;
+}) {
   const w = 200;
   const h = height;
   const pad = 3;
@@ -15,12 +23,13 @@ export function Sparkline({ data, height = 32 }: { data: number[]; height?: numb
   const lastV = data[n - 1];
   const total = data.reduce((a, b) => a + b, 0);
   const empty = total === 0;
+  const stroke = color ?? "var(--signal)";
 
   return (
     <svg viewBox={`0 0 ${w} ${h}`} className={`spark${empty ? " empty" : ""}`} preserveAspectRatio="none" role="img" aria-label="14-day activity">
-      <path d={area} className="spark-area" />
-      <path d={line} className="spark-line" />
-      {!empty && <circle cx={x(n - 1)} cy={y(lastV)} r={2.2} className="spark-dot" />}
+      <path d={area} className="spark-area" style={empty ? undefined : { fill: stroke, fillOpacity: 0.14 }} />
+      <path d={line} className="spark-line" style={empty ? undefined : { stroke }} />
+      {!empty && <circle cx={x(n - 1)} cy={y(lastV)} r={2.4} className="spark-dot" style={{ fill: stroke }} />}
     </svg>
   );
 }
