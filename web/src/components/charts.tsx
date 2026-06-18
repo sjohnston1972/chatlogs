@@ -1,5 +1,30 @@
 import type { Breakdown, DailyPoint, HeatCell } from "../types";
 
+/** Tiny inline sparkline for site tiles (last N days of activity). */
+export function Sparkline({ data, height = 32 }: { data: number[]; height?: number }) {
+  const w = 200;
+  const h = height;
+  const pad = 3;
+  const max = Math.max(1, ...data);
+  const n = data.length;
+  if (n === 0) return null;
+  const x = (i: number) => pad + (n === 1 ? 0 : (i * (w - 2 * pad)) / (n - 1));
+  const y = (v: number) => h - pad - (v / max) * (h - 2 * pad);
+  const line = data.map((v, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+  const area = `${line} L${x(n - 1).toFixed(1)},${h - pad} L${x(0).toFixed(1)},${h - pad} Z`;
+  const lastV = data[n - 1];
+  const total = data.reduce((a, b) => a + b, 0);
+  const empty = total === 0;
+
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} className={`spark${empty ? " empty" : ""}`} preserveAspectRatio="none" role="img" aria-label="14-day activity">
+      <path d={area} className="spark-area" />
+      <path d={line} className="spark-line" />
+      {!empty && <circle cx={x(n - 1)} cy={y(lastV)} r={2.2} className="spark-dot" />}
+    </svg>
+  );
+}
+
 /** Dual-line area chart for conversations + requests over time. */
 export function TimeSeries({ data }: { data: DailyPoint[] }) {
   if (data.length === 0) return <div className="chart-empty">No activity in range.</div>;

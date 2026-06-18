@@ -3,6 +3,7 @@ export interface SiteSummary {
   conversations: number;
   requests: number;
   last_activity: string | null;
+  spark: number[];
 }
 
 export interface ActivityStats {

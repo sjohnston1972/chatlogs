@@ -60,16 +60,14 @@
     // binding below is enabled (requires Email Routing + a verified destination).
     "ALERT_EMAIL_TO": "stevie.johnston@gmail.com",
     "ALERT_EMAIL_FROM": "chatlogs@clydeford.net"
-  }
+  },
 
   // ── Email alerts/digests (Phase 5) ──────────────────────────────────────────
-  // To enable email delivery, after enabling Email Routing on clydeford.net AND
-  // verifying stevie.johnston@gmail.com as a destination address, uncomment:
-  //
-  // "send_email": [
-  //   { "name": "SEND_EMAIL", "destination_address": "stevie.johnston@gmail.com" }
-  // ]
-  //
-  // then redeploy. Until then, alerts/digests are computed and logged to the
-  // dashboard DB's alert_log table but not emailed.
+  // Sends via Cloudflare Email Routing. Requires Email Routing enabled on
+  // clydeford.net AND stevie.johnston@gmail.com verified as a destination address
+  // — otherwise `wrangler deploy` fails. The Worker (src/email.ts) uses this
+  // binding; if it's ever removed, email delivery just no-ops.
+  "send_email": [
+    { "name": "SEND_EMAIL", "destination_address": "stevie.johnston@gmail.com" }
+  ]
 }

@@ -3,6 +3,7 @@ import { api } from "../api";
 import type { SiteSummary } from "../types";
 import { fmtNum, fmtRelative, isRecent } from "../format";
 import { href, navigate } from "../router";
+import { Sparkline } from "./charts";
 
 export function SitesView() {
   const [sites, setSites] = useState<SiteSummary[] | null>(null);
@@ -62,6 +63,12 @@ export function SitesView() {
                   <div className="k">requests</div>
                 </div>
               </div>
+              {s.spark && (
+                <div className="spark-wrap">
+                  <Sparkline data={s.spark} />
+                  <span className="spark-cap">14-day activity</span>
+                </div>
+              )}
               <div className="last">
                 <span>last activity {fmtRelative(s.last_activity)}</span>
                 {isRecent(s.last_activity, 24) && <span className="pulse" title="active in last 24h" />}

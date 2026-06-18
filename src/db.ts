@@ -46,6 +46,20 @@ export interface SiteSummary {
   conversations: number;
   requests: number;
   last_activity: string | null;
+  /** Conversations active per day over the last 14 days (oldest → newest). */
+  spark: number[];
+}
+
+const SPARK_DAYS = 14;
+
+/** Build the last N day-strings (YYYY-MM-DD), oldest first. */
+function lastDays(n: number): string[] {
+  const days: string[] = [];
+  const now = Date.now();
+  for (let i = n - 1; i >= 0; i--) {
+    days.push(new Date(now - i * 86400_000).toISOString().slice(0, 10));
+  }
+  return days;
 }
 
 export async function getSites(db: D1Database): Promise<SiteSummary[]> {
@@ -59,8 +73,33 @@ export async function getSites(db: D1Database): Promise<SiteSummary[]> {
        GROUP BY site
        ORDER BY conversations DESC, site ASC`,
     )
-    .all<SiteSummary>();
-  return results ?? [];
+    .all<Omit<SiteSummary, "spark">>();
+  const sites = results ?? [];
+  if (sites.length === 0) return [];
+
+  // Per-site daily activity for the sparkline (last 14 days, by updated_at).
+  const days = lastDays(SPARK_DAYS);
+  const since = `${days[0]}T00:00:00.000Z`;
+  const { results: daily } = await db
+    .prepare(
+      `SELECT site, substr(updated_at, 1, 10) AS day, COUNT(*) AS c
+       FROM chat_logs
+       WHERE updated_at >= ?
+       GROUP BY site, day`,
+    )
+    .bind(since)
+    .all<{ site: string; day: string; c: number }>();
+
+  const bySite = new Map<string, Map<string, number>>();
+  for (const r of daily ?? []) {
+    if (!bySite.has(r.site)) bySite.set(r.site, new Map());
+    bySite.get(r.site)!.set(r.day, r.c);
+  }
+
+  return sites.map((s) => {
+    const dayMap = bySite.get(s.site);
+    return { ...s, spark: days.map((d) => dayMap?.get(d) ?? 0) };
+  });
 }
 
 // ── Activity counts ──────────────────────────────────────────────────────────
