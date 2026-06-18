@@ -460,3 +460,7 @@
 @media (max-width: 820px) {
   .row.ai { grid-template-columns: 1fr auto; }
 }
+
+/* Keep transcript lines readable even though the container is now wide. */
+.thread { max-width: 1040px; }
+.ask-thread { max-width: 1040px; }
