@@ -2,14 +2,17 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import type { ActivityStats } from "../types";
 import { fmtNum } from "../format";
-import { navigate } from "../router";
+import { navigate, useLocation } from "../router";
 
-/**
- * Top bar with the brand mark and the activity ribbon — the signature readout.
- * Shows account-wide 24h / 7d conversation activity. Refreshes when `refreshKey`
- * changes so navigation keeps the numbers current.
- */
-export function TopBar({ refreshKey }: { refreshKey: number }) {
+const NAV = [
+  { path: "/", label: "Sites" },
+  { path: "/conversations", label: "Conversations" },
+  { path: "/analytics", label: "Analytics" },
+  { path: "/ask", label: "Ask" },
+];
+
+export function TopBar({ refreshKey }: { refreshKey: string }) {
+  const loc = useLocation();
   const [stats, setStats] = useState<ActivityStats | null>(null);
 
   useEffect(() => {
@@ -22,6 +25,8 @@ export function TopBar({ refreshKey }: { refreshKey: number }) {
       alive = false;
     };
   }, [refreshKey]);
+
+  const activePath = loc.path === "/conversation" ? "/conversations" : loc.path;
 
   return (
     <header className="topbar">
@@ -38,46 +43,29 @@ export function TopBar({ refreshKey }: { refreshKey: number }) {
           <span className="sub">console</span>
         </div>
 
+        <nav className="topnav">
+          {NAV.map((n) => (
+            <button
+              key={n.path}
+              className={`navlink${activePath === n.path ? " active" : ""}`}
+              onClick={() => navigate(n.path)}
+            >
+              {n.label}
+            </button>
+          ))}
+        </nav>
+
         <div className="ribbon" aria-label="activity">
-          <Readout
-            label="24h"
-            value={stats ? fmtNum(stats.conversations_24h) : "·"}
-            unit="convos"
-            live={!!stats && stats.conversations_24h > 0}
-          />
-          <Readout
-            label="7d"
-            value={stats ? fmtNum(stats.conversations_7d) : "·"}
-            unit="convos"
-            live={!!stats && stats.conversations_7d > 0}
-          />
-          <Readout
-            label="total"
-            value={stats ? fmtNum(stats.total_conversations) : "·"}
-            unit="convos"
-          />
-          <Readout
-            label="requests"
-            value={stats ? fmtNum(stats.total_requests) : "·"}
-            unit="all-time"
-          />
+          <Readout label="24h" value={stats ? fmtNum(stats.conversations_24h) : "·"} unit="convos" live={!!stats && stats.conversations_24h > 0} />
+          <Readout label="7d" value={stats ? fmtNum(stats.conversations_7d) : "·"} unit="convos" live={!!stats && stats.conversations_7d > 0} />
+          <Readout label="total" value={stats ? fmtNum(stats.total_conversations) : "·"} unit="convos" />
         </div>
       </div>
     </header>
   );
 }
 
-function Readout({
-  label,
-  value,
-  unit,
-  live,
-}: {
-  label: string;
-  value: string;
-  unit: string;
-  live?: boolean;
-}) {
+function Readout({ label, value, unit, live }: { label: string; value: string; unit: string; live?: boolean }) {
   return (
     <div className={`readout${live ? " live" : ""}`}>
       <span className="label">{label}</span>

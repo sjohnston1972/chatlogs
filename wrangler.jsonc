@@ -14,14 +14,29 @@
     "not_found_handling": "single-page-application"
   },
 
-  // Bind to the EXISTING shared chat-logs D1 database. Do NOT recreate or migrate it.
+  // D1 bindings.
+  // - DB:      the EXISTING shared chat-logs database. READ-ONLY (SELECT only). Never migrated.
+  // - DASH_DB: the dashboard's OWN database for AI analysis cache, triage state, geo, meta.
+  //            All dashboard writes go here; chat_logs is never written to.
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "chat-logs",
       "database_id": "9c83ca62-df07-4e1c-979c-f559f7bc8b4a"
+    },
+    {
+      "binding": "DASH_DB",
+      "database_name": "chatlogs-dashboard",
+      "database_id": "fc0ca3d3-b87b-44c3-8f0d-6685c1105b37"
     }
   ],
+
+  // Cron Triggers:
+  // - every 3 min: analyze new/changed conversations + fire real-time alerts
+  // - 07:00 UTC daily: send the AI digest email
+  "triggers": {
+    "crons": ["*/3 * * * *", "0 7 * * *"]
+  },
 
   // Custom domain. The zone clydeford.net is active on this account (verified).
   "routes": [
@@ -37,8 +52,24 @@
 
   "vars": {
     // Cloudflare Access team domain used for defense-in-depth JWT verification in the Worker.
-    "ACCESS_TEAM_DOMAIN": "clydeford.cloudflareaccess.com"
+    "ACCESS_TEAM_DOMAIN": "clydeford.cloudflareaccess.com",
     // ACCESS_AUD is set after the Access app is created (see README). When present,
     // the Worker verifies the Cf-Access-Jwt-Assertion token on /api/* requests.
+
+    // Email digest/alert addresses. Delivery only happens once the send_email
+    // binding below is enabled (requires Email Routing + a verified destination).
+    "ALERT_EMAIL_TO": "stevie.johnston@gmail.com",
+    "ALERT_EMAIL_FROM": "chatlogs@clydeford.net"
   }
+
+  // ── Email alerts/digests (Phase 5) ──────────────────────────────────────────
+  // To enable email delivery, after enabling Email Routing on clydeford.net AND
+  // verifying stevie.johnston@gmail.com as a destination address, uncomment:
+  //
+  // "send_email": [
+  //   { "name": "SEND_EMAIL", "destination_address": "stevie.johnston@gmail.com" }
+  // ]
+  //
+  // then redeploy. Until then, alerts/digests are computed and logged to the
+  // dashboard DB's alert_log table but not emailed.
 }

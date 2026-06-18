@@ -22,22 +22,31 @@
   3. The helper — paste into your Worker
 
   /**
-   * Append this site's chat transcript to the shared `chat-logs` D1 database.
-   * One row per (site, ip): `site` is the request hostname, so no per-site
-   * config is needed. The transcript is overwritten with the latest, most
-   * complete conversation each call.
+   * Append this turn to the shared `chat-logs` D1 database. One row per
+   * (site, ip): `site` is the request hostname, so no per-site config is needed.
+   *
+   * IMPORTANT: pass ONLY the latest turn (the user's message + the assistant's
+   * reply). The helper APPENDS them to whatever is already stored, so the full
+   * conversation history accumulates server-side regardless of what your app
+   * keeps in memory. Do NOT pass the whole history — that's not needed and the
+   * old overwrite-based helper lost everything but the last turn.
    */
   async function logChat(
     env: Env,
     site: string,
     ip: string,
-    messages: { role: string; content: string }[],
+    userMessage: string,
     reply: string,
     cta = false,
   ): Promise<void> {
     const now = new Date().toISOString();
-    const transcript = JSON.stringify({
-      messages: [...messages, { role: "assistant", content: reply }],
+    const userMsg = JSON.stringify({ role: "user", content: userMessage });
+    const botMsg = JSON.stringify({ role: "assistant", content: reply });
+    const initial = JSON.stringify({
+      messages: [
+        { role: "user", content: userMessage },
+        { role: "assistant", content: reply },
+      ],
       cta,
     });
 
@@ -45,11 +54,18 @@
       `INSERT INTO chat_logs (site, ip, created_at, updated_at, request_count, transcript)
        VALUES (?1, ?2, ?3, ?3, 1, ?4)
        ON CONFLICT(site, ip) DO UPDATE SET
-         updated_at = ?3,
+         updated_at    = ?3,
          request_count = request_count + 1,
-         transcript = ?4`,
+         transcript    = json_set(
+                           json_insert(
+                             json_insert(transcript, '$.messages[#]', json(?5)),
+                             '$.messages[#]', json(?6)
+                           ),
+                           -- keep CTA "sticky": once it fires for a visitor it stays true
+                           '$.cta', json(CASE WHEN json_extract(transcript, '$.cta') = 1 THEN 'true' ELSE ?7 END)
+                         )`,
     )
-      .bind(site, ip, now, transcript)
+      .bind(site, ip, now, initial, userMsg, botMsg, cta ? "true" : "false")
       .run();
   }
 
@@ -60,12 +76,16 @@
   const ip = request.headers.get("CF-Connecting-IP") || "unknown";
   const site = new URL(request.url).hostname;
   ctx.waitUntil(
-    logChat(env, site, ip, messages, reply, cta).catch((e) =>
+    logChat(env, site, ip, userMessage, reply, cta).catch((e) =>
       console.error("chat_log_error", String(e)),
     ),
   );
 
-  - messages = the array of {role, content} turns you sent to the model (user + assistant history). If your site doesn't
-  track a cta flag, just omit the last arg — it defaults to false.
+  - userMessage = the single user message for THIS turn. reply = the assistant's reply for this turn. The helper appends
+    both to the stored transcript, so history builds up automatically. If your site doesn't track a cta flag, omit the
+    last arg — it defaults to false (and once true, it stays true for that visitor).
+  - `json_insert(..., '$.messages[#]', json(...))` is SQLite's append-to-array idiom; D1's SQLite supports it.
   - ctx.waitUntil runs the write after the response is sent, so logging never blocks or breaks the chat. Your handler
-  needs access to ctx — it's the third arg of fetch(request, env, ctx), so thread it through to your handler.
+    needs access to ctx — it's the third arg of fetch(request, env, ctx), so thread it through to your handler.
+  - NOTE: rows written by the old overwrite helper already lost their earlier turns; history accumulates from the moment
+    you deploy this version. New (site, ip) conversations record in full immediately.

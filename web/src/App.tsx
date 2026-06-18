@@ -3,6 +3,8 @@ import { TopBar } from "./components/TopBar";
 import { SitesView } from "./components/SitesView";
 import { ConversationsView } from "./components/ConversationsView";
 import { ConversationView } from "./components/ConversationView";
+import { AnalyticsView } from "./components/AnalyticsView";
+import { AskView } from "./components/AskView";
 import { api } from "./api";
 import type { SiteSummary } from "./types";
 import { useLocation } from "./router";
@@ -11,32 +13,38 @@ export function App() {
   const loc = useLocation();
   const [sites, setSites] = useState<SiteSummary[] | null>(null);
 
-  // Load the site list once for the filter dropdown (shared across views).
   useEffect(() => {
     let alive = true;
     api
       .sites()
       .then((r) => alive && setSites(r.sites))
-      .catch(() => {
-        /* views surface their own errors */
-      });
+      .catch(() => {});
     return () => {
       alive = false;
     };
   }, []);
 
   let view;
-  if (loc.path === "/conversations") {
-    view = <ConversationsView sites={sites} />;
-  } else if (loc.path === "/conversation") {
-    view = <ConversationView />;
-  } else {
-    view = <SitesView />;
+  switch (loc.path) {
+    case "/conversations":
+      view = <ConversationsView sites={sites} />;
+      break;
+    case "/conversation":
+      view = <ConversationView />;
+      break;
+    case "/analytics":
+      view = <AnalyticsView sites={sites} />;
+      break;
+    case "/ask":
+      view = <AskView />;
+      break;
+    default:
+      view = <SitesView />;
   }
 
   return (
     <>
-      <TopBar refreshKey={loc.path === "/" ? 1 : 0} />
+      <TopBar refreshKey={loc.path} />
       {view}
     </>
   );

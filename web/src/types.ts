@@ -14,6 +14,35 @@ export interface ActivityStats {
   requests_7d: number;
 }
 
+export interface AnalysisSummary {
+  summary: string;
+  intent: string;
+  sentiment: string;
+  lead_score: number;
+  is_lead: boolean;
+  bot_failed: boolean;
+  topics: string[];
+  model?: string;
+  analyzed_at?: string;
+}
+
+export interface TriageState {
+  is_read: boolean;
+  starred: boolean;
+  archived: boolean;
+  lead_status: string | null;
+  note: string | null;
+  tags: string[];
+}
+
+export interface GeoInfo {
+  country: string | null;
+  country_code: string | null;
+  region?: string | null;
+  city: string | null;
+  org?: string | null;
+}
+
 export interface ConversationListItem {
   site: string;
   ip: string;
@@ -23,6 +52,9 @@ export interface ConversationListItem {
   preview: string;
   cta: boolean;
   message_count: number;
+  analysis: AnalysisSummary | null;
+  triage: TriageState;
+  geo: GeoInfo | null;
 }
 
 export interface ConversationListResult {
@@ -47,4 +79,51 @@ export interface ConversationDetail {
   updated_at: string;
   cta: boolean;
   messages: TranscriptMessage[];
+  analysis: AnalysisSummary | null;
+  triage: TriageState;
+  geo: GeoInfo | null;
+}
+
+export interface Breakdown {
+  key: string;
+  count: number;
+}
+
+export interface DailyPoint {
+  day: string;
+  conversations: number;
+  requests: number;
+}
+
+export interface HeatCell {
+  dow: number;
+  hour: number;
+  count: number;
+}
+
+export interface SiteScore {
+  site: string;
+  conversations: number;
+  requests: number;
+  avg_messages: number;
+  avg_requests: number;
+  cta: number;
+  cta_rate: number;
+}
+
+export interface Analytics {
+  series: DailyPoint[];
+  cta: { conversations: number; cta: number; rate: number };
+  heat: HeatCell[];
+  scores: SiteScore[];
+  intents: Breakdown[];
+  sentiments: Breakdown[];
+  leads: { analyzed: number; leads: number; bot_failures: number; avg_lead_score: number };
+  geo: Breakdown[];
+  days: number;
+}
+
+export interface AskResult {
+  answer: string;
+  queries: string[];
 }

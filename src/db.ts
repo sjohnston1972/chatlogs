@@ -20,7 +20,7 @@ function safeSort(sort: string | null, dir: string | null): { col: string; dir: 
   return { col, dir: direction };
 }
 
-function parseTranscript(raw: string): Transcript {
+export function parseTranscript(raw: string): Transcript {
   try {
     const t = JSON.parse(raw) as Partial<Transcript>;
     return {
@@ -136,6 +136,12 @@ export interface ConversationListParams {
   dir?: string | null;
   limit: number;
   offset: number;
+  /**
+   * Optional allowlist of "site|ip" keys. When provided, only these
+   * conversations are returned. Used to apply AI/triage filters computed from
+   * the dashboard DB to the chat_logs query. An empty array yields no results.
+   */
+  keys?: string[] | null;
 }
 
 export interface ConversationListResult {
@@ -165,6 +171,15 @@ function buildWhere(params: ConversationListParams): { clause: string; binds: un
   if (params.to) {
     conds.push("updated_at <= ?");
     binds.push(params.to);
+  }
+  if (params.keys) {
+    if (params.keys.length === 0) {
+      conds.push("0 = 1"); // allowlist present but empty → no rows
+    } else {
+      const placeholders = params.keys.map(() => "?").join(",");
+      conds.push(`(site || '|' || ip) IN (${placeholders})`);
+      binds.push(...params.keys);
+    }
   }
 
   return { clause: conds.length ? `WHERE ${conds.join(" AND ")}` : "", binds };
@@ -211,6 +226,29 @@ export async function getConversations(
   });
 
   return { items, total, limit: params.limit, offset: params.offset };
+}
+
+// ── Rows for analysis (read-only) ────────────────────────────────────────────
+
+/** Most-recently-updated raw rows, for the analysis pipeline to (re)process. */
+export async function getRecentRows(db: D1Database, limit: number): Promise<ChatLogRow[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT site, ip, created_at, updated_at, request_count, transcript
+       FROM chat_logs
+       ORDER BY updated_at DESC
+       LIMIT ?`,
+    )
+    .bind(limit)
+    .all<ChatLogRow>();
+  return results ?? [];
+}
+
+/** Run an arbitrary caller-supplied SELECT (used by ask-your-logs; guarded upstream). */
+export async function runReadonlySelect(db: D1Database, sql: string): Promise<unknown[]> {
+  const safeSql = /limit\s+\d+/i.test(sql) ? sql : `${sql.replace(/;+\s*$/, "")} LIMIT 200`;
+  const { results } = await db.prepare(safeSql).all();
+  return results ?? [];
 }
 
 // ── Conversation detail ──────────────────────────────────────────────────────

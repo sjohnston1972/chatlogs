@@ -8,7 +8,11 @@ from it.
 - **Live URL:** https://chatlogs.clydeford.net
 - **Auth:** Cloudflare Access (Zero Trust) — only `stevie.johnston@gmail.com`
 - **Stack:** Cloudflare Worker (TypeScript) + React/Vite SPA served via the ASSETS binding
-- **Database:** existing D1 `chat-logs` (`9c83ca62-df07-4e1c-979c-f559f7bc8b4a`), bound read-only
+- **Source DB:** existing D1 `chat-logs` (`9c83ca62-df07-4e1c-979c-f559f7bc8b4a`), bound **read-only**
+- **Dashboard DB:** D1 `chatlogs-dashboard` (`fc0ca3d3-b87b-44c3-8f0d-6685c1105b37`) — the dashboard's own writable store for AI analysis, triage state, geo cache, and alerts. The shared `chat_logs` DB is never written to.
+- **AI:** Anthropic API — per-conversation analysis (Haiku 4.5), ask-your-logs + digest (Opus 4.8)
+
+> **Two layers.** v1 is the read-only viewer. v2 adds an **intelligence layer**: a Cron-driven pipeline that analyzes every conversation with Claude (summary, intent, sentiment, lead score, bot-failure detection), analytics dashboards, a natural-language "ask your logs" query interface, triage workflow (star/read/archive/notes/lead-status), and email alerts/digests.
 
 ---
 
@@ -183,8 +187,13 @@ Both the SPA and the API return a 302 to the Access login (with `auth_status: NO
 | --- | --- | --- |
 | `GET /api/sites` | — | `{ sites: [{ site, conversations, requests, last_activity }] }` |
 | `GET /api/activity` | `site?` | `{ total_conversations, total_requests, conversations_24h, conversations_7d, requests_24h, requests_7d }` |
-| `GET /api/conversations` | `site? q? from? to? sort? dir? page? pageSize?` | `{ items[], total, page, pageSize }` |
-| `GET /api/conversation` | `site` `ip` (required) | `{ site, ip, request_count, created_at, updated_at, cta, messages[] }` |
+| `GET /api/conversations` | `site? q? from? to? sort? dir? page? pageSize?` + AI/triage filters (`intent? sentiment? lead? failed? starred? archived? read?`) | `{ items[] (enriched w/ analysis+triage+geo), total, page, pageSize, keysCapped }` |
+| `GET /api/conversation` | `site` `ip` (required) | full transcript + `analysis`, `triage`, `geo` (lazily analyzed) |
+| `GET /api/analytics` | `site? days?` | `{ series, cta, heat, scores, intents, sentiments, leads, geo }` |
+| `POST /api/ask` | `{ question }` | `{ answer, queries[] }` (read-only SQL agent) |
+| `POST /api/triage` | `{ site, ip, is_read?, starred?, archived?, lead_status?, note?, tags? }` | `{ triage }` |
+| `GET /api/export` | conversation filters + `format=csv\|json` | downloadable export |
+| `POST /api/admin/analyze` | `max?` | manually run the analysis pipeline (testing/backfill) |
 
 `from`/`to` are ISO bounds compared against `updated_at`. `sort` ∈
 {`updated_at`, `created_at`, `request_count`}; `dir` ∈ {`asc`, `desc`}.
@@ -192,7 +201,44 @@ Both the SPA and the API return a 302 to the Access login (with `auth_status: NO
 
 ---
 
-## Database
+## Intelligence layer (v2)
+
+### AI analysis pipeline
+- A **Cron Trigger** (`*/3 * * * *`) scans the most-recent conversations, and for any that are new or whose transcript changed, calls Claude to produce a structured analysis: one-line **summary**, **intent** (pricing/support/booking/lead/complaint/smalltalk/other), **sentiment** (positive/neutral/negative/frustrated), **lead score** (0–100) + is-lead flag, **bot-failure** flag, and topic keywords. Results are cached in `chatlogs-dashboard.analysis` keyed by `(site, ip)` and re-computed when the transcript changes.
+- Conversations are also analyzed **lazily on first view** if the cache is missing/stale.
+- **Model:** per-conversation analysis defaults to `claude-haiku-4-5` (cheap, high volume); ask-your-logs and the digest default to `claude-opus-4-8`. Override with the `ANALYSIS_MODEL` / `ASK_MODEL` vars.
+- **Geo enrichment:** visitor IPs are resolved to country/city (via ipwho.is) and cached in `chatlogs-dashboard.geo` (best-effort, off the request path).
+
+### Analytics
+`GET /api/analytics` returns: conversations-over-time series, CTA conversion funnel, hour×weekday activity heatmap, per-site scorecards (avg messages, CTA rate), intent & sentiment breakdowns, lead stats, and visitor-by-country. Rendered as lightweight inline-SVG charts (no chart library).
+
+### Ask your logs
+`POST /api/ask` runs a bounded, **read-only** SQL agent: Claude may call a `run_sql` tool (guarded so only a single `SELECT` is allowed, auto-`LIMIT`ed) up to 4 times, then answers in plain English with real numbers. The guard (`isSafeSelect`) rejects anything that isn't a lone SELECT.
+
+### Triage workflow
+`POST /api/triage` upserts per-conversation state in `chatlogs-dashboard.triage`: read/unread (auto-marked on open), starred, archived, lead status (new/contacted/closed), private notes, and manual tags. The conversations list can filter by any of these plus the AI fields. `GET /api/export?...&format=csv|json` exports the current filtered view.
+
+### Alerts & digests (Cron)
+- Every 3 min, after analysis, **real-time alerts** are raised for hot leads (lead score ≥ 70), negative/frustrated sentiment, and bot failures — de-duped via `alert_log` so each conversation alerts at most once per kind.
+- `0 7 * * *` UTC sends a **daily digest**: 24h activity, lead/sentiment rollup, and silence detection (sites that went quiet), narrated by Claude.
+- **Email delivery** uses Cloudflare Email Routing's `send_email` binding and is **opt-in** (see below). Until enabled, alerts/digests are still computed and recorded to `alert_log`, just not emailed.
+
+#### Enabling email (one-time)
+1. In the Cloudflare dashboard: **Email Routing** → enable it on `clydeford.net`, then add and **verify** `stevie.johnston@gmail.com` as a destination address (click the verification email).
+2. Uncomment the `send_email` block in `wrangler.jsonc`:
+   ```jsonc
+   "send_email": [
+     { "name": "SEND_EMAIL", "destination_address": "stevie.johnston@gmail.com" }
+   ]
+   ```
+3. `npm run deploy`. The `ALERT_EMAIL_TO` / `ALERT_EMAIL_FROM` vars are already set.
+
+(The API token used for setup lacks Email Routing scope, so this step is manual.)
+
+### Dashboard DB schema (`chatlogs-dashboard`, migration `migrations/0001_dashboard_init.sql`)
+`analysis` (AI cache) · `triage` (manual state) · `geo` (IP→location cache) · `meta` (cursors/digest bookkeeping) · `alert_log` (audit + de-dupe). Applied with `wrangler d1 execute chatlogs-dashboard --remote --file ./migrations/0001_dashboard_init.sql`.
+
+## Source database
 
 Bound as `DB` in `wrangler.jsonc`; **never recreated or migrated** by this project.
 
@@ -210,7 +256,7 @@ are ever run against the shared `chat-logs` database.
 ## Secrets & git hygiene
 
 - `.env` (Cloudflare token + account id and other project secrets) is **git-ignored**.
-- `ACCESS_AUD` lives as a Worker secret, never in source or the client bundle.
+- `ACCESS_AUD` and `ANTHROPIC_API_KEY` live as Worker secrets (`wrangler secret put …`), never in source or the client bundle.
 - `.dev.vars`, `node_modules/`, `web/dist/`, and `.wrangler/` are git-ignored too.
 
 ---
@@ -218,8 +264,9 @@ are ever run against the shared `chat-logs` database.
 ## Deployment status
 
 - ✅ Deployed: `chatlogs` Worker, custom domain `chatlogs.clydeford.net` live.
-- ✅ Bindings: `DB` (D1 `chat-logs`), `ASSETS`, `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD`.
-- ✅ Cloudflare Access app + owner-only policy created; unauthenticated requests
-  return 302 → Access login (verified for both `/` and `/api/*`).
-- ℹ️ The `chat_logs` table currently has 0 rows; the dashboard shows empty states
-  until your chatbots write conversations.
+- ✅ Bindings: `DB` (D1 `chat-logs`, read-only), `DASH_DB` (D1 `chatlogs-dashboard`), `ASSETS`, `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD` (secret), `ANTHROPIC_API_KEY` (secret).
+- ✅ Cron Triggers active: `*/3 * * * *` (analysis + alerts), `0 7 * * *` (daily digest).
+- ✅ Cloudflare Access app + owner-only policy; unauthenticated requests return 302 → Access login (verified for `/` and `/api/*`).
+- ✅ AI pipeline verified end-to-end: conversations auto-analyzed, leads/sentiment/bot-failures scored, geo cached, alerts logged.
+- ⏳ **Email delivery is opt-in** — enable Email Routing + verify the destination, then uncomment the `send_email` binding and redeploy (see "Enabling email" above). Until then, alerts/digests are computed and logged but not emailed.
+- ⚠️ **Known data issue (write side):** chatbots using the old logging helper overwrote the transcript each turn, so historical rows store only the last exchange. `wrangler_instructions.txt` now contains an append-based helper that fixes this going forward — adopt it on each chatbot. Existing truncated rows can't be recovered.
