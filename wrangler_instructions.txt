@@ -1,0 +1,71 @@
+
+  1. wrangler.jsonc — add the binding (same DB on every site)
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "chat-logs",
+      "database_id": "9c83ca62-df07-4e1c-979c-f559f7bc8b4a"
+    }
+  ]
+
+  ▎ No migration needed — the table already exists. Don't run d1 migrations apply from other projects against this
+  ▎ shared DB.
+
+  2. Add DB to your Env interface
+
+  interface Env {
+    // ...your existing bindings...
+    DB: D1Database;
+  }
+
+  3. The helper — paste into your Worker
+
+  /**
+   * Append this site's chat transcript to the shared `chat-logs` D1 database.
+   * One row per (site, ip): `site` is the request hostname, so no per-site
+   * config is needed. The transcript is overwritten with the latest, most
+   * complete conversation each call.
+   */
+  async function logChat(
+    env: Env,
+    site: string,
+    ip: string,
+    messages: { role: string; content: string }[],
+    reply: string,
+    cta = false,
+  ): Promise<void> {
+    const now = new Date().toISOString();
+    const transcript = JSON.stringify({
+      messages: [...messages, { role: "assistant", content: reply }],
+      cta,
+    });
+
+    await env.DB.prepare(
+      `INSERT INTO chat_logs (site, ip, created_at, updated_at, request_count, transcript)
+       VALUES (?1, ?2, ?3, ?3, 1, ?4)
+       ON CONFLICT(site, ip) DO UPDATE SET
+         updated_at = ?3,
+         request_count = request_count + 1,
+         transcript = ?4`,
+    )
+      .bind(site, ip, now, transcript)
+      .run();
+  }
+
+  4. Call it from your chat handler
+
+  Just before you return the reply to the client:
+
+  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+  const site = new URL(request.url).hostname;
+  ctx.waitUntil(
+    logChat(env, site, ip, messages, reply, cta).catch((e) =>
+      console.error("chat_log_error", String(e)),
+    ),
+  );
+
+  - messages = the array of {role, content} turns you sent to the model (user + assistant history). If your site doesn't
+  track a cta flag, just omit the last arg — it defaults to false.
+  - ctx.waitUntil runs the write after the response is sent, so logging never blocks or breaks the chat. Your handler
+  needs access to ctx — it's the third arg of fetch(request, env, ctx), so thread it through to your handler.

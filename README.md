@@ -1,0 +1,225 @@
+# chatlogs — chat-logs admin dashboard
+
+A private, **read-only** admin dashboard (Cloudflare Worker) for reviewing chatbot
+transcripts logged by your various website chatbots. All chatbots write to one
+shared Cloudflare D1 database (`chat-logs`); this dashboard only ever `SELECT`s
+from it.
+
+- **Live URL:** https://chatlogs.clydeford.net
+- **Auth:** Cloudflare Access (Zero Trust) — only `stevie.johnston@gmail.com`
+- **Stack:** Cloudflare Worker (TypeScript) + React/Vite SPA served via the ASSETS binding
+- **Database:** existing D1 `chat-logs` (`9c83ca62-df07-4e1c-979c-f559f7bc8b4a`), bound read-only
+
+---
+
+## What it does
+
+1. **Sites** (landing) — every site (`SELECT DISTINCT site`) as a card with its
+   conversation count, total request count, and last-activity time.
+2. **Conversations** — list filterable by site, with free-text search across the
+   transcript, a date-range filter on `updated_at`, sortable columns
+   (updated_at default desc, also created_at / request_count), a one-line preview
+   (first user message), a `cta` badge, and pagination (50/page).
+3. **Conversation detail** — the full transcript rendered as a chat thread
+   (visitor vs assistant turns), the `cta` flag, and all metadata.
+4. **Activity ribbon** — last-24h / 7d conversation counts plus all-time totals,
+   pinned in the top bar.
+
+---
+
+## Architecture
+
+```
+Request → chatlogs.clydeford.net
+        → Cloudflare Access (edge)         ← blocks anyone who isn't the allowed identity
+        → Worker (src/index.ts)
+             /api/*  → verify Access JWT (defense-in-depth) → read-only D1 query → JSON
+             else    → env.ASSETS.fetch()  → React SPA (web/dist)
+```
+
+- **Read-only & injection-safe.** Every D1 call in `src/db.ts` is a `SELECT` built
+  with prepared statements and `.bind()`. User input is never interpolated into
+  SQL. The only dynamic SQL fragments — sort column and direction — are validated
+  against fixed whitelists.
+- **Two layers of auth.** Cloudflare Access enforces identity at the edge
+  (unauthenticated requests never reach the Worker). On top of that, when
+  `ACCESS_AUD` is set the Worker independently verifies the signed
+  `Cf-Access-Jwt-Assertion` JWT (issuer, audience, expiry, RS256 signature against
+  the team JWKS) on every `/api` request — see `src/access.ts`.
+
+### Project layout
+
+```
+wrangler.jsonc          Worker config: D1 binding, ASSETS binding, custom domain
+src/
+  index.ts              Worker entry — routing, auth gate, /api handlers, ASSETS fallback
+  db.ts                 Read-only D1 query layer (prepared statements only)
+  access.ts             Cloudflare Access JWT verification (defense-in-depth)
+  types.ts              Shared types / Env bindings
+web/                    React + Vite SPA (built to web/dist)
+  src/components/        TopBar, SitesView, ConversationsView, ConversationView
+  src/api.ts, router.ts, format.ts, styles.css
+```
+
+---
+
+## Local development
+
+```bash
+npm install
+
+# Terminal 1 — Worker + remote D1 (reads the real shared DB, read-only):
+npm run dev            # wrangler dev  (http://127.0.0.1:8787)
+
+# Terminal 2 — SPA with hot reload, /api proxied to the worker above:
+npm run dev:web        # vite          (http://127.0.0.1:5173)
+```
+
+Wrangler authenticates from the `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`
+environment variables (kept in `.env`, which is git-ignored). Load them into your
+shell before running wrangler, e.g. `export $(grep -v '^#' .env | xargs)` on
+bash, or set them in your environment manager of choice.
+
+> During local dev there is no Cloudflare Access in front of you, and `ACCESS_AUD`
+> is not set locally, so the Worker skips JWT verification. That is expected — the
+> deployed Worker behind Access is fully protected.
+
+---
+
+## Build & deploy
+
+```bash
+npm run deploy         # vite build  →  wrangler deploy
+```
+
+`wrangler deploy` uploads the Worker + the built SPA assets and provisions the
+custom domain route `chatlogs.clydeford.net` (the zone `clydeford.net` is on this
+account). Confirmed working — see "Deployment status" below.
+
+---
+
+## Security — Cloudflare Access (the approach used)
+
+This dashboard uses **Cloudflare Access** (the spec's preferred option), not Basic
+Auth. The Zero Trust org `clydeford.cloudflareaccess.com` already existed on the
+account, so a self-hosted Access application + an allow policy were created for the
+hostname.
+
+### What was set up
+
+| Item | Value |
+| --- | --- |
+| Access app | `chatlogs` (self_hosted) |
+| App domain | `chatlogs.clydeford.net` |
+| App AUD | `11db930bcf0bd8502b3b768140368f896d354152f8df51c958e7184dc930691c` |
+| Policy | `owner-only` — `decision: allow`, `include: email = stevie.johnston@gmail.com` |
+| Session | 24h |
+| Team domain | `clydeford.cloudflareaccess.com` |
+
+### How to reproduce / modify via API
+
+Create the app:
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json" \
+  "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/access/apps" \
+  --data '{
+    "name": "chatlogs", "domain": "chatlogs.clydeford.net",
+    "type": "self_hosted", "session_duration": "24h"
+  }'
+# → returns the app id and its "aud" tag
+```
+
+Attach an allow policy (use the app id from above):
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json" \
+  "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/access/apps/<APP_ID>/policies" \
+  --data '{
+    "name": "owner-only", "decision": "allow",
+    "include": [ { "email": { "email": "stevie.johnston@gmail.com" } } ]
+  }'
+```
+
+To **add another allowed person**, add another `{ "email": { "email": "..." } }`
+object to the policy's `include` array (PUT the policy), or do it in the Zero Trust
+dashboard: **Access → Applications → chatlogs → Policies**.
+
+### Defense-in-depth JWT verification (already enabled)
+
+The app's AUD is stored as a Worker secret so the Worker re-verifies the Access JWT:
+
+```bash
+printf '<APP_AUD>' | npx wrangler secret put ACCESS_AUD
+```
+
+(`ACCESS_TEAM_DOMAIN` is a plain var in `wrangler.jsonc`.) If `ACCESS_AUD` is ever
+removed, the Worker falls back to trusting the edge Access policy alone.
+
+### Verified: unauthenticated requests are blocked
+
+```
+$ curl -i https://chatlogs.clydeford.net/
+HTTP/1.1 302 Found
+Www-Authenticate: Cloudflare-Access ...
+Location: https://clydeford.cloudflareaccess.com/cdn-cgi/access/login/chatlogs.clydeford.net?...
+
+$ curl -i https://chatlogs.clydeford.net/api/sites
+HTTP/1.1 302 Found
+Location: https://clydeford.cloudflareaccess.com/cdn-cgi/access/login/chatlogs.clydeford.net?...
+```
+
+Both the SPA and the API return a 302 to the Access login (with `auth_status: NONE`)
+— the Worker is never reached. Authenticating as `stevie.johnston@gmail.com`
+(Cloudflare emails a one-time PIN) grants access.
+
+---
+
+## API reference (all read-only, all behind Access)
+
+| Endpoint | Query params | Returns |
+| --- | --- | --- |
+| `GET /api/sites` | — | `{ sites: [{ site, conversations, requests, last_activity }] }` |
+| `GET /api/activity` | `site?` | `{ total_conversations, total_requests, conversations_24h, conversations_7d, requests_24h, requests_7d }` |
+| `GET /api/conversations` | `site? q? from? to? sort? dir? page? pageSize?` | `{ items[], total, page, pageSize }` |
+| `GET /api/conversation` | `site` `ip` (required) | `{ site, ip, request_count, created_at, updated_at, cta, messages[] }` |
+
+`from`/`to` are ISO bounds compared against `updated_at`. `sort` ∈
+{`updated_at`, `created_at`, `request_count`}; `dir` ∈ {`asc`, `desc`}.
+`pageSize` is clamped to 1–200 (default 50).
+
+---
+
+## Database
+
+Bound as `DB` in `wrangler.jsonc`; **never recreated or migrated** by this project.
+
+```
+Table chat_logs (PRIMARY KEY (site, ip)) — one row = latest conversation per (site, ip)
+  site TEXT · ip TEXT · created_at TEXT (ISO) · updated_at TEXT (ISO)
+  request_count INTEGER · transcript TEXT (JSON: { messages: [{role,content}], cta: bool })
+```
+
+This dashboard issues `SELECT` only. No migrations, inserts, updates, or deletes
+are ever run against the shared `chat-logs` database.
+
+---
+
+## Secrets & git hygiene
+
+- `.env` (Cloudflare token + account id and other project secrets) is **git-ignored**.
+- `ACCESS_AUD` lives as a Worker secret, never in source or the client bundle.
+- `.dev.vars`, `node_modules/`, `web/dist/`, and `.wrangler/` are git-ignored too.
+
+---
+
+## Deployment status
+
+- ✅ Deployed: `chatlogs` Worker, custom domain `chatlogs.clydeford.net` live.
+- ✅ Bindings: `DB` (D1 `chat-logs`), `ASSETS`, `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD`.
+- ✅ Cloudflare Access app + owner-only policy created; unauthenticated requests
+  return 302 → Access login (verified for both `/` and `/api/*`).
+- ℹ️ The `chat_logs` table currently has 0 rows; the dashboard shows empty states
+  until your chatbots write conversations.

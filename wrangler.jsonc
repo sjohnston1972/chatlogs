@@ -1,0 +1,44 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "chatlogs",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-06-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Serve the built React/Vite SPA from ./web/dist via the ASSETS binding.
+  // The Worker (src/index.ts) owns /api/* and delegates everything else to ASSETS.
+  // not_found_handling: single-page-application => unknown client routes get index.html.
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "./web/dist",
+    "not_found_handling": "single-page-application"
+  },
+
+  // Bind to the EXISTING shared chat-logs D1 database. Do NOT recreate or migrate it.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "chat-logs",
+      "database_id": "9c83ca62-df07-4e1c-979c-f559f7bc8b4a"
+    }
+  ],
+
+  // Custom domain. The zone clydeford.net is active on this account (verified).
+  "routes": [
+    {
+      "pattern": "chatlogs.clydeford.net",
+      "custom_domain": true
+    }
+  ],
+
+  "observability": {
+    "enabled": true
+  },
+
+  "vars": {
+    // Cloudflare Access team domain used for defense-in-depth JWT verification in the Worker.
+    "ACCESS_TEAM_DOMAIN": "clydeford.cloudflareaccess.com"
+    // ACCESS_AUD is set after the Access app is created (see README). When present,
+    // the Worker verifies the Cf-Access-Jwt-Assertion token on /api/* requests.
+  }
+}

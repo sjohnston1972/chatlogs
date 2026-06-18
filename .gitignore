@@ -1,0 +1,22 @@
+# Secrets — never commit
+.env
+.env.*
+.dev.vars
+.dev.vars.*
+
+# Dependencies
+node_modules/
+
+# Build output
+web/dist/
+dist/
+
+# Wrangler
+.wrangler/
+wrangler.toml.bak
+
+# Editor / OS
+.DS_Store
+*.log
+.vscode/
+.idea/

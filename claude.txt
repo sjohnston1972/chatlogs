@@ -1,0 +1,74 @@
+  Build me a chat-logs dashboard as a Cloudflare Worker, deployed to the custom
+  domain "chatlogs.clydeford.net".
+
+  ## Purpose
+  A private admin dashboard that reads chat transcripts logged by my various
+  website chatbots and presents them to me. All chatbots write to ONE shared
+  Cloudflare D1 database. This dashboard is read-only over that database.
+
+  ## The existing database (do not recreate it — bind to it)
+  - D1 database name: chat-logs
+  - database_id: 9c83ca62-df07-4e1c-979c-f559f7bc8b4a
+  - Region: WEUR (same Cloudflare account as my other Workers)
+  - Add it to wrangler.jsonc as:
+      "d1_databases": [
+        { "binding": "DB", "database_name": "chat-logs",
+          "database_id": "9c83ca62-df07-4e1c-979c-f559f7bc8b4a" }
+      ]
+
+  ## Schema (table: chat_logs)
+  - site          TEXT     -- the chatbot's hostname, e.g. "foundry-ns.com"
+  - ip            TEXT     -- visitor IP (CF-Connecting-IP)
+  - created_at    TEXT     -- ISO 8601, first message from this (site, ip)
+  - updated_at    TEXT     -- ISO 8601, most recent message
+  - request_count INTEGER  -- number of chat requests from this (site, ip)
+  - transcript    TEXT     -- JSON: { "messages": [{role, content}, ...],
+                           --         "cta": boolean }
+                           -- messages include both user and assistant turns;
+                           -- the assistant's latest reply is the last element.
+  - PRIMARY KEY (site, ip) -- so one row = the latest conversation per visitor
+                           --   per site. There is one row per unique IP per site.
+
+  ## What the dashboard must do
+  1. A landing view listing all sites (SELECT DISTINCT site...) with per-site
+     counts: number of conversations (rows) and total request_count.
+  2. A conversations list, filterable by site, sortable by updated_at desc
+     (default), showing site, ip, request_count, created_at, updated_at, and a
+     one-line preview (first user message). Add a free-text search over transcript
+     content and a date-range filter on updated_at. Paginate (e.g. 50/page).
+  3. A conversation detail view: render the full transcript as a chat thread
+     (user vs assistant bubbles), show the cta flag, and all metadata.
+  4. Show "last 24h / 7d" activity counts somewhere near the top.
+
+  ## Security (important — this is private data)
+  The dashboard MUST NOT be publicly readable. Protect it. Preferred: Cloudflare
+  Access (Zero Trust) policy on chatlogs.clydeford.net allowing only
+  stevie.johnston@gmail.com — set this up if possible and document the steps.
+  If Access can't be scripted, fall back to HTTP Basic Auth enforced in the
+  Worker, with the username/password read from Worker secrets (DASH_USER,
+  DASH_PASS) — never hardcoded, never in the client bundle or git. Tell me which
+  approach you used and how to set the secrets.
+
+  ## Stack & conventions
+  - Cloudflare Worker (TypeScript). You may serve a small React/Vite SPA via an
+    ASSETS binding, or server-render plain HTML from the Worker — your call, but
+    keep it lightweight and fast. The Worker queries D1 via prepared statements;
+    never interpolate user input into SQL (use .bind()).
+  - Read-only: this dashboard must only SELECT. No INSERT/UPDATE/DELETE on
+    chat_logs.
+  - Custom domain: chatlogs.clydeford.net. The zone clydeford.net must exist on
+    my Cloudflare account; add a custom_domain route in wrangler.jsonc. If the
+    zone isn't on the account, stop and tell me before deploying.
+  - Keep secrets out of git; .env gitignored.
+
+  ## Deliverables
+  - Full project (wrangler.jsonc, Worker code, any frontend, README with setup +
+    deploy steps).
+  - Run `wrangler deploy` and confirm it's live, and confirm the Access/Basic-Auth
+    protection actually blocks unauthenticated requests (show the test).
+  - Do NOT run any migrations or writes against the chat-logs DB — it's shared and
+    already populated by other sites.
+
+  Start by reading the live schema to confirm it matches the above:
+    npx wrangler d1 execute chat-logs --remote \
+      --command "SELECT site, COUNT(*) rows, SUM(request_count) reqs FROM chat_logs GROUP BY site"
