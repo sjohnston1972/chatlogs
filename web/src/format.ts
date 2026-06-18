@@ -37,6 +37,15 @@ export function fmtNum(n: number | null | undefined): string {
   return n.toLocaleString();
 }
 
+/** ISO 3166-1 alpha-2 country code → flag emoji (regional indicator symbols). */
+export function flagEmoji(cc: string | null | undefined): string {
+  if (!cc || cc.length !== 2 || !/^[a-zA-Z]{2}$/.test(cc)) return "";
+  const base = 0x1f1e6;
+  return String.fromCodePoint(
+    ...[...cc.toUpperCase()].map((c) => base + (c.charCodeAt(0) - 65)),
+  );
+}
+
 /** Whether an ISO timestamp falls within the last `hours` hours. */
 export function isRecent(iso: string | null, hours: number): boolean {
   if (!iso) return false;

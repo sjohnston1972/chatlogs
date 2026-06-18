@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import type { ConversationDetail, TriageState } from "../types";
-import { fmtAbsolute, fmtNum, fmtRelative } from "../format";
+import { fmtAbsolute, fmtNum, fmtRelative, flagEmoji } from "../format";
 import { href, navigate, useLocation } from "../router";
 import { IntentBadge, LeadBadge, SentimentDot } from "./badges";
 
@@ -85,7 +85,7 @@ export function ConversationView() {
             <div className="top">
               <span className="ipsite">{data.ip}</span>
               <span className="badge">{data.site}</span>
-              {data.geo?.country && <span className="badge">{data.geo.city ? `${data.geo.city}, ` : ""}{data.geo.country}</span>}
+              {data.geo?.country && <span className="badge">{flagEmoji(data.geo.country_code)} {data.geo.city ? `${data.geo.city}, ` : ""}{data.geo.country}</span>}
               {data.cta && <span className="badge cta">cta triggered</span>}
               <div className="triage-controls">
                 <button className={`tbtn${triage.starred ? " on" : ""}`} onClick={() => patch({ starred: !triage.starred })}>★ {triage.starred ? "Starred" : "Star"}</button>

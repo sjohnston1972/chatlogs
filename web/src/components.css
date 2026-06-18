@@ -423,3 +423,40 @@
   letter-spacing: 0.08em;
   color: var(--muted-dim);
 }
+
+/* ── Conversations row: single-line site + flags ──────────── */
+.row.ai {
+  grid-template-columns: 178px 132px 1fr 64px 104px;
+}
+.row.ai .cell-site {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  word-break: normal;
+}
+.row.ai .cell-site .site-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.row.ai .cell-ip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  word-break: normal;
+}
+.row.ai .cell-ip .ip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.flag {
+  font-size: 13px;
+  line-height: 1;
+  flex: none;
+}
+@media (max-width: 820px) {
+  .row.ai { grid-template-columns: 1fr auto; }
+}

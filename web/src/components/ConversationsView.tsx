@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type ConversationFilters } from "../api";
 import type { ConversationListResult, SiteSummary } from "../types";
-import { fmtNum, fmtRelative, isRecent } from "../format";
+import { fmtNum, fmtRelative, flagEmoji, isRecent } from "../format";
 import { href, navigate, useLocation } from "../router";
 import { AiMarkers } from "./badges";
 
@@ -259,11 +259,13 @@ export function ConversationsView({ sites }: { sites: SiteSummary[] | null }) {
                 >
                   <span className="cell-site">
                     <button className={`star${x.triage?.starred ? " on" : ""}`} onClick={(e) => toggleStar(e, c.site, c.ip, x.triage?.starred)} title="star">★</button>
-                    {c.site}
+                    <span className="site-name" title={c.site}>{c.site}</span>
                   </span>
                   <span className="cell-ip">
-                    {c.ip}
-                    {x.geo?.country_code && <span className="flag" title={x.geo.country ?? ""}> · {x.geo.country_code}</span>}
+                    {x.geo?.country_code && (
+                      <span className="flag" title={x.geo.country ?? x.geo.country_code}>{flagEmoji(x.geo.country_code)}</span>
+                    )}
+                    <span className="ip-text">{c.ip}</span>
                   </span>
                   <span className="cell-preview">
                     {c.cta && <span className="badge cta">cta</span>}
