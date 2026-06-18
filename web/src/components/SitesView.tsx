@@ -3,17 +3,7 @@ import { api } from "../api";
 import type { SiteSummary } from "../types";
 import { fmtNum, fmtRelative, isRecent } from "../format";
 import { href, navigate } from "../router";
-import { Sparkline } from "./charts";
-
-// Map activity heat (0..1) to a colour: cool grey (quiet) → amber → hot orange (busy).
-function heatColor(heat: number): [number, number, number] {
-  const cool: [number, number, number] = [93, 106, 134];
-  const amber: [number, number, number] = [242, 180, 90];
-  const hot: [number, number, number] = [240, 121, 79];
-  const lerp = (a: [number, number, number], b: [number, number, number], t: number) =>
-    a.map((v, i) => Math.round(v + (b[i] - v) * t)) as [number, number, number];
-  return heat <= 0.65 ? lerp(cool, amber, heat / 0.65) : lerp(amber, hot, (heat - 0.65) / 0.35);
-}
+import { Sparkline, heatColor } from "./charts";
 
 export function SitesView() {
   const [sites, setSites] = useState<SiteSummary[] | null>(null);
@@ -61,8 +51,8 @@ export function SitesView() {
             const total14 = spark.reduce((a, b) => a + b, 0);
             const recent3 = spark.slice(-3).reduce((a, b) => a + b, 0);
             const active24 = isRecent(s.last_activity, 24);
-            let heat = total14 === 0 ? 0 : Math.min(1, recent3 / 8);
-            if (active24) heat = Math.max(heat, 0.45);
+            let heat = total14 === 0 ? 0 : Math.min(1, recent3 / 4);
+            if (active24) heat = Math.max(heat, 0.55);
             const [r, g, b] = heatColor(heat);
             const stroke = `rgb(${r}, ${g}, ${b})`;
             const glow =

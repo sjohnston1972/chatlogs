@@ -1,5 +1,15 @@
 import type { Breakdown, DailyPoint, HeatCell } from "../types";
 
+/** Map activity heat (0..1) to a colour: cool grey (quiet) → amber → hot orange (busy). */
+export function heatColor(heat: number): [number, number, number] {
+  const cool: [number, number, number] = [93, 106, 134];
+  const amber: [number, number, number] = [242, 180, 90];
+  const hot: [number, number, number] = [240, 121, 79];
+  const lerp = (a: [number, number, number], b: [number, number, number], t: number) =>
+    a.map((v, i) => Math.round(v + (b[i] - v) * t)) as [number, number, number];
+  return heat <= 0.55 ? lerp(cool, amber, heat / 0.55) : lerp(amber, hot, (heat - 0.55) / 0.45);
+}
+
 /** Tiny inline sparkline for site tiles; `color` warms with recent activity. */
 export function Sparkline({
   data,

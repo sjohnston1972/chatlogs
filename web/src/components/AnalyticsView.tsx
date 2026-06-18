@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import type { Analytics, SiteSummary } from "../types";
 import { fmtNum } from "../format";
-import { BarBreakdown, Heatmap, RateRing, TimeSeries } from "./charts";
+import { BarBreakdown, Heatmap, RateRing, TimeSeries, heatColor } from "./charts";
 import { href, navigate, useLocation } from "../router";
 
 const RANGES = [7, 30, 90];
@@ -118,22 +118,31 @@ export function AnalyticsView({ sites }: { sites: SiteSummary[] | null }) {
                   <span className="h r">Avg msgs</span>
                   <span className="h r">CTA rate</span>
                 </div>
-                {data.scores.map((s) => (
-                  <div
-                    className="srow"
-                    key={s.site}
-                    onClick={() => navigate(href("/conversations", { site: s.site }))}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => e.key === "Enter" && navigate(href("/conversations", { site: s.site }))}
-                  >
-                    <span className="cell-site">{s.site}</span>
-                    <span className="cell-count">{fmtNum(s.conversations)}</span>
-                    <span className="cell-count">{fmtNum(s.requests)}</span>
-                    <span className="cell-count">{s.avg_messages}</span>
-                    <span className="cell-count">{Math.round(s.cta_rate * 100)}%</span>
-                  </div>
-                ))}
+                {(() => {
+                  const maxConv = Math.max(1, ...data.scores.map((s) => s.conversations));
+                  return data.scores.map((s) => {
+                    const heat = Math.min(1, Math.sqrt(s.conversations / maxConv));
+                    const [r, g, b] = heatColor(heat);
+                    const c = `rgb(${r}, ${g}, ${b})`;
+                    return (
+                      <div
+                        className="srow"
+                        key={s.site}
+                        style={{ boxShadow: `inset 3px 0 0 ${c}` }}
+                        onClick={() => navigate(href("/conversations", { site: s.site }))}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => e.key === "Enter" && navigate(href("/conversations", { site: s.site }))}
+                      >
+                        <span className="cell-site">{s.site}</span>
+                        <span className="cell-count" style={{ color: c }}>{fmtNum(s.conversations)}</span>
+                        <span className="cell-count">{fmtNum(s.requests)}</span>
+                        <span className="cell-count">{s.avg_messages}</span>
+                        <span className="cell-count">{Math.round(s.cta_rate * 100)}%</span>
+                      </div>
+                    );
+                  });
+                })()}
               </div>
             </section>
           </div>
