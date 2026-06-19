@@ -5,6 +5,7 @@ import { ConversationsView } from "./components/ConversationsView";
 import { ConversationView } from "./components/ConversationView";
 import { AnalyticsView } from "./components/AnalyticsView";
 import { AskView } from "./components/AskView";
+import { ImproveView } from "./components/ImproveView";
 import { api } from "./api";
 import type { SiteSummary } from "./types";
 import { useLocation } from "./router";
@@ -37,6 +38,9 @@ export function App() {
       break;
     case "/ask":
       view = <AskView />;
+      break;
+    case "/improve":
+      view = <ImproveView sites={sites} />;
       break;
     default:
       view = <SitesView />;

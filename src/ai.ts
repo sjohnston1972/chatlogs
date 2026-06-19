@@ -51,7 +51,7 @@ interface AnthropicResponse {
   stop_reason?: string;
 }
 
-async function callAnthropic(
+export async function callAnthropic(
   env: Env,
   body: Record<string, unknown>,
 ): Promise<AnthropicResponse> {

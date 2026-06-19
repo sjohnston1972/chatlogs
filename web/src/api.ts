@@ -2,6 +2,7 @@ import type {
   ActivityStats,
   Analytics,
   AskResult,
+  BotReport,
   ConversationDetail,
   ConversationListResult,
   SiteSummary,
@@ -73,6 +74,8 @@ export const api = {
     req<Analytics>("/api/analytics", { params: { site, days } }),
   ask: (question: string) =>
     req<AskResult>("/api/ask", { method: "POST", body: { question } }),
+  improveGet: (site: string) => req<BotReport>("/api/improve", { params: { site } }),
+  improveRun: (site: string) => req<BotReport>("/api/improve", { method: "POST", params: { site } }),
   triage: (site: string, ip: string, patch: Partial<TriageState>) =>
     req<{ triage: TriageState }>("/api/triage", { method: "POST", body: { site, ip, ...patch } }),
   exportUrl: (params: ConversationFilters & { format: "csv" | "json" }) => {

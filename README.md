@@ -192,6 +192,8 @@ Both the SPA and the API return a 302 to the Access login (with `auth_status: NO
 | `GET /api/analytics` | `site? days?` | `{ series, cta, heat, scores, intents, sentiments, leads, geo }` |
 | `POST /api/ask` | `{ question }` | `{ answer, queries[] }` (read-only SQL agent) |
 | `POST /api/triage` | `{ site, ip, is_read?, starred?, archived?, lead_status?, note?, tags? }` | `{ triage }` |
+| `GET /api/improve` | `site` | stored bot-improvement report (or `{ report: null }`) |
+| `POST /api/improve` | `site` | regenerate + return the report (Opus synthesis) |
 | `GET /api/export` | conversation filters + `format=csv\|json` | downloadable export |
 | `POST /api/admin/analyze` | `max?` | manually run the analysis pipeline (testing/backfill) |
 
@@ -214,6 +216,9 @@ Both the SPA and the API return a 302 to the Access login (with `auth_status: NO
 
 ### Ask your logs
 `POST /api/ask` runs a bounded, **read-only** SQL agent: Claude may call a `run_sql` tool (guarded so only a single `SELECT` is allowed, auto-`LIMIT`ed) up to 4 times, then answers in plain English with real numbers. The guard (`isSafeSelect`) rejects anything that isn't a lone SELECT.
+
+### Bot-improvement loop (Improve tab)
+Turns observed conversations into **concrete fixes for each site's bot**. On demand (per-site **Generate/Regenerate** button → `POST /api/improve?site=`), Claude (Opus) reviews a bounded sample of recent conversations (failures/negatives prioritised, full transcripts for those), and returns a **bot-health score**, ranked **content gaps** (severity, frequency, a linked example, diagnosis, and a paste-ready fix), plus **system-prompt additions** and **FAQ suggestions** you can copy straight into your bot. Reports are stored in `chatlogs-dashboard.bot_reports` (one per site) and persist until regenerated. It only *recommends* — it never touches your bots (you apply the changes). Quality improves once full transcripts accumulate (see logging fix). Spec: `docs/bot-improvement-loop.md`.
 
 ### Triage workflow
 `POST /api/triage` upserts per-conversation state in `chatlogs-dashboard.triage`: read/unread (auto-marked on open), starred, archived, lead status (new/contacted/closed), private notes, and manual tags. The conversations list can filter by any of these plus the AI fields. `GET /api/export?...&format=csv|json` exports the current filtered view.

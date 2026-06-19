@@ -128,3 +128,31 @@ export interface AskResult {
   answer: string;
   queries: string[];
 }
+
+export interface Gap {
+  theme: string;
+  severity: "high" | "medium" | "low";
+  frequency: number;
+  example_ip: string;
+  diagnosis: string;
+  fix_type: "faq" | "system_prompt" | "escalation";
+  suggested_fix: string;
+}
+
+export interface BotReportContent {
+  headline: string;
+  gaps: Gap[];
+  system_prompt_additions: string[];
+  faq_suggestions: { q: string; a: string }[];
+}
+
+export interface BotReport {
+  site: string;
+  generated_at?: string;
+  window_days?: number;
+  conversations_analyzed?: number;
+  failure_rate?: number;
+  health_score?: number;
+  model?: string;
+  report: BotReportContent | null;
+}

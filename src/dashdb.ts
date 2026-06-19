@@ -341,6 +341,51 @@ export async function setMeta(db: D1Database, key: string, value: string): Promi
     .run();
 }
 
+// ── Bot-improvement reports ──────────────────────────────────────────────────
+
+export interface BotReportRow {
+  site: string;
+  generated_at: string;
+  window_days: number;
+  conversations_analyzed: number;
+  failure_rate: number;
+  health_score: number;
+  report: string; // JSON
+  model: string;
+}
+
+export async function getBotReport(db: D1Database, site: string): Promise<BotReportRow | null> {
+  return db.prepare(`SELECT * FROM bot_reports WHERE site = ?`).bind(site).first<BotReportRow>();
+}
+
+export async function upsertBotReport(db: D1Database, r: BotReportRow): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO bot_reports
+         (site, generated_at, window_days, conversations_analyzed, failure_rate, health_score, report, model)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(site) DO UPDATE SET
+         generated_at = excluded.generated_at,
+         window_days = excluded.window_days,
+         conversations_analyzed = excluded.conversations_analyzed,
+         failure_rate = excluded.failure_rate,
+         health_score = excluded.health_score,
+         report = excluded.report,
+         model = excluded.model`,
+    )
+    .bind(
+      r.site,
+      r.generated_at,
+      r.window_days,
+      r.conversations_analyzed,
+      r.failure_rate,
+      r.health_score,
+      r.report,
+      r.model,
+    )
+    .run();
+}
+
 // ── Alert log ────────────────────────────────────────────────────────────────
 
 export async function logAlert(

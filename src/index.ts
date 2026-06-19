@@ -2,7 +2,8 @@ import type { Env } from "./types";
 import { verifyAccess } from "./access";
 import { getActivity, getSites, runReadonlySelect } from "./db";
 import { listConversations, detailConversation } from "./list";
-import { patchTriage } from "./dashdb";
+import { patchTriage, getBotReport } from "./dashdb";
+import { generateReport } from "./improve";
 import { askLogs } from "./ai";
 import { analyzePending } from "./pipeline";
 import { runAlerts, runDigest } from "./alerts";
@@ -206,6 +207,30 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
           "Content-Type": "text/csv; charset=utf-8",
           "Content-Disposition": `attachment; filename="chatlogs-export.csv"`,
         },
+      });
+    }
+
+    // Bot-improvement report: GET returns the stored report, POST regenerates it.
+    if (path === "/api/improve" && (method === "GET" || method === "POST")) {
+      const site = q.get("site");
+      if (!site) return json({ error: "site is required" }, 400);
+      let row = method === "POST" ? await generateReport(env, site) : await getBotReport(env.DASH_DB, site);
+      if (!row) return json({ site, report: null });
+      let parsed: unknown = null;
+      try {
+        parsed = JSON.parse(row.report);
+      } catch {
+        parsed = null;
+      }
+      return json({
+        site: row.site,
+        generated_at: row.generated_at,
+        window_days: row.window_days,
+        conversations_analyzed: row.conversations_analyzed,
+        failure_rate: row.failure_rate,
+        health_score: row.health_score,
+        model: row.model,
+        report: parsed,
       });
     }
 
