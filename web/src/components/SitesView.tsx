@@ -5,6 +5,11 @@ import { fmtNum, fmtRelative, isRecent } from "../format";
 import { href, navigate } from "../router";
 import { Sparkline, heatColor } from "./charts";
 
+/** Recent activity = conversations active in the last 3 days (from the sparkline). */
+function recent3(spark: number[] | undefined): number {
+  return (spark ?? []).slice(-3).reduce((a, b) => a + b, 0);
+}
+
 export function SitesView() {
   const [sites, setSites] = useState<SiteSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -46,12 +51,13 @@ export function SitesView() {
 
       {sites && sites.length > 0 && (
         <div className="grid">
-          {sites.map((s) => {
+          {[...sites]
+            .sort((a, b) => recent3(b.spark) - recent3(a.spark) || b.conversations - a.conversations)
+            .map((s) => {
             const spark = s.spark ?? [];
             const total14 = spark.reduce((a, b) => a + b, 0);
-            const recent3 = spark.slice(-3).reduce((a, b) => a + b, 0);
             const active24 = isRecent(s.last_activity, 24);
-            let heat = total14 === 0 ? 0 : Math.min(1, recent3 / 4);
+            let heat = total14 === 0 ? 0 : Math.min(1, recent3(spark) / 4);
             if (active24) heat = Math.max(heat, 0.55);
             const [r, g, b] = heatColor(heat);
             const stroke = `rgb(${r}, ${g}, ${b})`;

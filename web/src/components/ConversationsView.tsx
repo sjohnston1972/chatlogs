@@ -4,6 +4,7 @@ import type { ConversationListResult, SiteSummary } from "../types";
 import { fmtNum, fmtRelative, flagEmoji, isRecent } from "../format";
 import { href, navigate, useLocation } from "../router";
 import { AiMarkers } from "./badges";
+import { heatColor } from "./charts";
 
 const PAGE_SIZE = 50;
 const INTENTS = ["pricing", "support", "booking", "lead", "complaint", "smalltalk", "other"];
@@ -247,10 +248,18 @@ export function ConversationsView({ sites }: { sites: SiteSummary[] | null }) {
 
             {!loading && items.map((c, i) => {
               const x = c as typeof c & { analysis: import("../types").AnalysisSummary | null; triage: import("../types").TriageState; geo: import("../types").GeoInfo | null };
+              let leadBar: string | undefined;
+              if (i === sel) {
+                leadBar = "inset 3px 0 0 var(--signal)";
+              } else if (x.analysis) {
+                const [r, g, b] = heatColor(x.analysis.lead_score / 100);
+                leadBar = `inset 3px 0 0 rgb(${r}, ${g}, ${b})`;
+              }
               return (
                 <div
                   className={`row ai${i === sel ? " sel" : ""}${x.triage?.is_read ? "" : " unread"}`}
                   key={`${c.site}|${c.ip}`}
+                  style={{ boxShadow: leadBar }}
                   onClick={() => navigate(href("/conversation", { site: c.site, ip: c.ip }))}
                   onMouseEnter={() => setSel(i)}
                   role="button"
