@@ -1,4 +1,5 @@
 import type { AnalysisSummary } from "../types";
+import { heatColor } from "./charts";
 
 export function SentimentDot({ sentiment }: { sentiment?: string }) {
   if (!sentiment) return null;
@@ -12,9 +13,15 @@ export function IntentBadge({ intent }: { intent?: string }) {
 
 export function LeadBadge({ score, isLead }: { score?: number; isLead?: boolean }) {
   if (score === undefined) return null;
-  const hot = isLead && score >= 70;
+  const [r, g, b] = heatColor(score / 100);
+  const c = `rgb(${r}, ${g}, ${b})`;
+  const hot = (isLead ?? false) && score >= 70;
   return (
-    <span className={`leadbadge${hot ? " hot" : ""}`} title="lead score (0-100)">
+    <span
+      className={`leadbadge${hot ? " hot" : ""}`}
+      style={{ color: c, borderColor: c }}
+      title="lead score (0-100) — warmer = hotter lead"
+    >
       ★ {score}
     </span>
   );
@@ -27,7 +34,7 @@ export function AiMarkers({ a }: { a: AnalysisSummary | null }) {
     <span className="ai-markers">
       <SentimentDot sentiment={a.sentiment} />
       <IntentBadge intent={a.intent} />
-      {a.is_lead && <LeadBadge score={a.lead_score} isLead={a.is_lead} />}
+      <LeadBadge score={a.lead_score} isLead={a.is_lead} />
       {a.bot_failed && <span className="failbadge" title="assistant failed to help">bot-fail</span>}
     </span>
   );

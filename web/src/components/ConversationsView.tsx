@@ -250,10 +250,10 @@ export function ConversationsView({ sites }: { sites: SiteSummary[] | null }) {
               const x = c as typeof c & { analysis: import("../types").AnalysisSummary | null; triage: import("../types").TriageState; geo: import("../types").GeoInfo | null };
               let leadBar: string | undefined;
               if (i === sel) {
-                leadBar = "inset 3px 0 0 var(--signal)";
+                leadBar = "inset 5px 0 0 var(--signal)";
               } else if (x.analysis) {
                 const [r, g, b] = heatColor(x.analysis.lead_score / 100);
-                leadBar = `inset 3px 0 0 rgb(${r}, ${g}, ${b})`;
+                leadBar = `inset 5px 0 0 rgb(${r}, ${g}, ${b})`;
               }
               return (
                 <div
