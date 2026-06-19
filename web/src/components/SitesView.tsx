@@ -5,9 +5,9 @@ import { fmtNum, fmtRelative, isRecent } from "../format";
 import { href, navigate } from "../router";
 import { Sparkline, heatColor } from "./charts";
 
-/** Recent activity = conversations active in the last 3 days (from the sparkline). */
+/** Recent activity = conversations active in the last ~3 days (last 12 of the 6h buckets). */
 function recent3(spark: number[] | undefined): number {
-  return (spark ?? []).slice(-3).reduce((a, b) => a + b, 0);
+  return (spark ?? []).slice(-12).reduce((a, b) => a + b, 0);
 }
 
 export function SitesView() {
@@ -86,7 +86,7 @@ export function SitesView() {
                 {s.spark && (
                   <div className="spark-wrap">
                     <Sparkline data={s.spark} color={stroke} />
-                    <span className="spark-cap">14-day activity</span>
+                    <span className="spark-cap">14-day activity · 6h resolution</span>
                   </div>
                 )}
                 <div className="last">

@@ -46,21 +46,12 @@ export interface SiteSummary {
   conversations: number;
   requests: number;
   last_activity: string | null;
-  /** Conversations active per day over the last 14 days (oldest → newest). */
+  /** Conversations active per 6-hour bucket over the last 14 days (oldest → newest). */
   spark: number[];
 }
 
-const SPARK_DAYS = 14;
-
-/** Build the last N day-strings (YYYY-MM-DD), oldest first. */
-function lastDays(n: number): string[] {
-  const days: string[] = [];
-  const now = Date.now();
-  for (let i = n - 1; i >= 0; i--) {
-    days.push(new Date(now - i * 86400_000).toISOString().slice(0, 10));
-  }
-  return days;
-}
+const SPARK_BUCKET_SEC = 6 * 3600; // 6-hour resolution
+const SPARK_BUCKETS = 56; // 14 days × 4 buckets/day
 
 export async function getSites(db: D1Database): Promise<SiteSummary[]> {
   const { results } = await db
@@ -77,28 +68,32 @@ export async function getSites(db: D1Database): Promise<SiteSummary[]> {
   const sites = results ?? [];
   if (sites.length === 0) return [];
 
-  // Per-site daily activity for the sparkline (last 14 days, by updated_at).
-  const days = lastDays(SPARK_DAYS);
-  const since = `${days[0]}T00:00:00.000Z`;
-  const { results: daily } = await db
+  // Per-site activity bucketed into 6-hour windows (by updated_at) for the sparkline.
+  const since = new Date(Date.now() - SPARK_BUCKETS * SPARK_BUCKET_SEC * 1000).toISOString();
+  const { results: buckets } = await db
     .prepare(
-      `SELECT site, substr(updated_at, 1, 10) AS day, COUNT(*) AS c
+      `SELECT site,
+              CAST(strftime('%s', updated_at) AS INTEGER) / ${SPARK_BUCKET_SEC} AS bucket,
+              COUNT(*) AS c
        FROM chat_logs
        WHERE updated_at >= ?
-       GROUP BY site, day`,
+       GROUP BY site, bucket`,
     )
     .bind(since)
-    .all<{ site: string; day: string; c: number }>();
+    .all<{ site: string; bucket: number; c: number }>();
 
-  const bySite = new Map<string, Map<string, number>>();
-  for (const r of daily ?? []) {
+  const bySite = new Map<string, Map<number, number>>();
+  for (const r of buckets ?? []) {
     if (!bySite.has(r.site)) bySite.set(r.site, new Map());
-    bySite.get(r.site)!.set(r.day, r.c);
+    bySite.get(r.site)!.set(r.bucket, r.c);
   }
 
+  const nowBucket = Math.floor(Date.now() / (SPARK_BUCKET_SEC * 1000));
   return sites.map((s) => {
-    const dayMap = bySite.get(s.site);
-    return { ...s, spark: days.map((d) => dayMap?.get(d) ?? 0) };
+    const m = bySite.get(s.site);
+    const spark: number[] = [];
+    for (let i = SPARK_BUCKETS - 1; i >= 0; i--) spark.push(m?.get(nowBucket - i) ?? 0);
+    return { ...s, spark };
   });
 }
 
