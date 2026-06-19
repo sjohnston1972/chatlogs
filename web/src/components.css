@@ -464,3 +464,12 @@
 /* Keep transcript lines readable even though the container is now wide. */
 .thread { max-width: 1040px; }
 .ask-thread { max-width: 1040px; }
+
+/* Per-turn timestamp anchors (conversation start / last update) */
+.turn-time {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted-dim);
+  margin-top: 4px;
+  white-space: nowrap;
+}

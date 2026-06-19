@@ -138,9 +138,18 @@ export function ConversationView() {
             <div className="thread">
               {data.messages.map((m, i) => {
                 const role = m.role === "user" ? "user" : m.role === "assistant" ? "assistant" : "other";
+                const isLast = i === data.messages.length - 1;
+                const ts = isLast ? data.updated_at : i === 0 ? data.created_at : null;
                 return (
                   <div className={`turn ${role}`} key={i}>
-                    <div className="who">{m.role || "—"}</div>
+                    <div className="who">
+                      {m.role || "—"}
+                      {ts && (
+                        <div className="turn-time" title={isLast ? "last update" : "conversation start"}>
+                          {fmtAbsolute(ts)}
+                        </div>
+                      )}
+                    </div>
                     <div className="bubble">{m.content}</div>
                   </div>
                 );

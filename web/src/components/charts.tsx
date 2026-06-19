@@ -10,6 +10,36 @@ export function heatColor(heat: number): [number, number, number] {
   return heat <= 0.55 ? lerp(cool, amber, heat / 0.55) : lerp(amber, hot, (heat - 0.55) / 0.45);
 }
 
+/** Light 3-point moving average to soften spiky sparse data. */
+function smoothData(data: number[]): number[] {
+  if (data.length < 3) return data;
+  return data.map((_, i) => {
+    const a = data[i - 1] ?? data[i];
+    const b = data[i];
+    const c = data[i + 1] ?? data[i];
+    return (a + 2 * b + c) / 4;
+  });
+}
+
+/** Catmull-Rom spline through the points → smooth cubic-bezier SVG path. */
+function smoothPath(pts: [number, number][]): string {
+  if (pts.length === 0) return "";
+  if (pts.length < 3) return pts.map((p, i) => `${i ? "L" : "M"}${p[0]},${p[1]}`).join(" ");
+  const d = [`M${pts[0][0].toFixed(1)},${pts[0][1].toFixed(1)}`];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] ?? pts[i];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[i + 2] ?? p2;
+    const c1x = p1[0] + (p2[0] - p0[0]) / 6;
+    const c1y = p1[1] + (p2[1] - p0[1]) / 6;
+    const c2x = p2[0] - (p3[0] - p1[0]) / 6;
+    const c2y = p2[1] - (p3[1] - p1[1]) / 6;
+    d.push(`C${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`);
+  }
+  return d.join(" ");
+}
+
 /** Tiny inline sparkline for site tiles; `color` warms with recent activity. */
 export function Sparkline({
   data,
@@ -22,15 +52,19 @@ export function Sparkline({
 }) {
   const w = 200;
   const h = height;
-  const pad = 3;
-  const max = Math.max(1, ...data);
+  const pad = 4;
   const n = data.length;
   if (n === 0) return null;
+  const sm = smoothData(data);
+  const max = Math.max(1, ...sm);
   const x = (i: number) => pad + (n === 1 ? 0 : (i * (w - 2 * pad)) / (n - 1));
-  const y = (v: number) => h - pad - (v / max) * (h - 2 * pad);
-  const line = data.map((v, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+  const y = (v: number) => {
+    const yy = h - pad - (v / max) * (h - 2 * pad);
+    return Math.max(pad, Math.min(h - pad, yy)); // clamp to avoid spline overshoot
+  };
+  const pts = sm.map((v, i) => [x(i), y(v)] as [number, number]);
+  const line = smoothPath(pts);
   const area = `${line} L${x(n - 1).toFixed(1)},${h - pad} L${x(0).toFixed(1)},${h - pad} Z`;
-  const lastV = data[n - 1];
   const total = data.reduce((a, b) => a + b, 0);
   const empty = total === 0;
   const stroke = color ?? "var(--signal)";
@@ -39,7 +73,7 @@ export function Sparkline({
     <svg viewBox={`0 0 ${w} ${h}`} className={`spark${empty ? " empty" : ""}`} preserveAspectRatio="none" role="img" aria-label="14-day activity">
       <path d={area} className="spark-area" style={empty ? undefined : { fill: stroke, fillOpacity: 0.14 }} />
       <path d={line} className="spark-line" style={empty ? undefined : { stroke }} />
-      {!empty && <circle cx={x(n - 1)} cy={y(lastV)} r={2.4} className="spark-dot" style={{ fill: stroke }} />}
+      {!empty && <circle cx={x(n - 1)} cy={pts[n - 1][1]} r={2.4} className="spark-dot" style={{ fill: stroke }} />}
     </svg>
   );
 }

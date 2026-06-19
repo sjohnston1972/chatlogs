@@ -10,6 +10,15 @@ function recent3(spark: number[] | undefined): number {
   return (spark ?? []).slice(-12).reduce((a, b) => a + b, 0);
 }
 
+/** Ranking score blending busyness (recent volume) with last-activity recency. */
+function sortScore(s: { spark?: number[]; last_activity: string | null }): number {
+  const busy = recent3(s.spark);
+  const last = s.last_activity ? new Date(s.last_activity).getTime() : 0;
+  const hoursSince = last ? (Date.now() - last) / 3_600_000 : 1e9;
+  const recency = Math.max(0, (72 - hoursSince) / 72); // 1 = just now, 0 = ≥3 days ago
+  return busy + recency * 3; // recency nudges up to +3 conversations-equivalent
+}
+
 export function SitesView() {
   const [sites, setSites] = useState<SiteSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -52,7 +61,7 @@ export function SitesView() {
       {sites && sites.length > 0 && (
         <div className="grid">
           {[...sites]
-            .sort((a, b) => recent3(b.spark) - recent3(a.spark) || b.conversations - a.conversations)
+            .sort((a, b) => sortScore(b) - sortScore(a) || b.conversations - a.conversations)
             .map((s) => {
             const spark = s.spark ?? [];
             const total14 = spark.reduce((a, b) => a + b, 0);
